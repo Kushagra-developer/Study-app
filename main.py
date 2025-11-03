@@ -1,5 +1,4 @@
 import streamlit as st
-import speech_recognition as sr
 from gtts import gTTS
 import os
 from utils.gemini_helper import generate_response
@@ -108,6 +107,34 @@ div.stButton > button:hover {
 </style>
 """, unsafe_allow_html=True)
 
+# --- JAVASCRIPT: Web Speech API for browser mic ---
+st.markdown("""
+<script>
+function recordVoice() {
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = "en-US";
+    recognition.start();
+
+    const orb = window.parent.document.querySelector('.mic-orb');
+    if (orb) orb.classList.add('listening');
+
+    recognition.onresult = function(event) {
+        const transcript = event.results[0][0].transcript;
+        const inputBox = window.parent.document.querySelector("textarea[data-testid='stTextArea']");
+        inputBox.value = transcript;
+        inputBox.dispatchEvent(new Event("input", { bubbles: true }));
+
+        if (orb) orb.classList.remove('listening');
+    };
+
+    recognition.onerror = function() {
+        alert("Voice input failed. Please try again.");
+        if (orb) orb.classList.remove('listening');
+    };
+}
+</script>
+""", unsafe_allow_html=True)
+
 # --- SIDEBAR ---
 selected_mode = sidebar_ui()
 
@@ -115,42 +142,31 @@ selected_mode = sidebar_ui()
 st.markdown('<h1 class="main-title">🧠 StudyBuddy</h1>', unsafe_allow_html=True)
 st.markdown("<h4 style='text-align:center;'>Your futuristic AI study companion</h4>", unsafe_allow_html=True)
 
-# --- Voice Section ---
-recognizer = sr.Recognizer()
+# --- Voice Orb + Input Area ---
+orb_html = '<div class="mic-orb" id="micOrb"></div>'
+st.markdown(orb_html, unsafe_allow_html=True)
 
-# Show the glowing orb (single instance)
-orb_placeholder = st.empty()
-orb_html = '<div class="mic-orb"></div>'
-orb_placeholder.markdown(orb_html, unsafe_allow_html=True)
+# Text box where recognized text will appear
+text = st.text_area("🎙️ Speak or type your question below:", "")
 
-if st.button("🎙️ Voice Assistant"):
-    # Animate orb for "listening"
-    orb_placeholder.markdown('<div class="mic-orb listening"></div>', unsafe_allow_html=True)
-    st.write("🎧 Listening...")
+# Voice button triggers JS
+if st.button("🎧 Speak Now"):
+    st.markdown("<script>recordVoice();</script>", unsafe_allow_html=True)
 
-    with sr.Microphone() as source:
-        audio = recognizer.listen(source)
-        try:
-            text = recognizer.recognize_google(audio)
-            st.markdown(f"<div class='user-bubble'>🗣️ {text}</div>", unsafe_allow_html=True)
+# --- Process Input with Gemini ---
+if text:
+    st.markdown(f"<div class='user-bubble'>🗣️ {text}</div>", unsafe_allow_html=True)
+    st.markdown("<div class='ai-bubble'><em>🤖 Thinking...</em></div>", unsafe_allow_html=True)
 
-            st.markdown("<div class='ai-bubble'><em>🤖 Thinking...</em></div>", unsafe_allow_html=True)
+    response = generate_response(text)
+    st.markdown(f"<div class='ai-bubble'>{response}</div>", unsafe_allow_html=True)
 
-            response = generate_response(text)
-            st.markdown(f"<div class='ai-bubble'>{response}</div>", unsafe_allow_html=True)
+    # Voice output
+    tts = gTTS(text=response, lang='en')
+    tts.save("response.mp3")
+    audio_file = open("response.mp3", "rb")
+    st.audio(audio_file.read(), format='audio/mp3')
 
-            # Voice output
-            tts = gTTS(text=response, lang='en')
-            tts.save("response.mp3")
-            audio_file = open("response.mp3", "rb")
-            st.audio(audio_file.read(), format='audio/mp3')
-
-        except Exception as e:
-            st.error(f"⚠️ Error: {e}")
-
-    # Revert orb back to normal
-    orb_placeholder.markdown(orb_html, unsafe_allow_html=True)
-
-# --- Divider and Chat UI ---
+# --- Divider + Chat UI ---
 st.markdown("<hr style='border: 1px solid rgba(255,255,255,0.1);'/>", unsafe_allow_html=True)
 chat_ui(selected_mode)
